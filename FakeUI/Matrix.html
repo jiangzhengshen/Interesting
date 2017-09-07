@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<meta charset="utf-8" />
+		<title>The Matrix for Practice</title>
+		<style type="text/css">
+			* {
+				margin: 0 auto;
+				padding: 0 auto;
+			}
+			
+			body {
+				background: black;
+				overflow: hidden;
+			}
+			
+			h1 {
+				text-align: center;
+				color: green;
+			}
+		</style>
+	</head>
+
+	<body>
+		<h1>Hello, Matrix!</h1>
+		<canvas id="matrix"></canvas>
+		<script type="text/javascript">
+			var matrix = document.getElementById("matrix");
+			var context = matrix.getContext("2d");
+			matrix.height = window.innerHeight;
+			matrix.width = window.innerWidth;
+			var drop = [];
+			var block_size = Math.floor(matrix.width/79);
+			var font_size = Math.floor(block_size * 0.8);
+			var rows = matrix.height / block_size;
+			var columns = matrix.width / block_size;
+			var expectLen = 0.7 * rows;
+			var continueProb = 1 - 1 / expectLen; /* geometric distribution */
+			for(var i = 0; i < columns; i++)
+				drop[i] = Math.floor(Math.random() * rows);
+
+			function drawMatrix() {
+				context.fillStyle = "rgba(0, 0, 0, 0.1)";
+				context.fillRect(0, 0, matrix.width, matrix.height);
+
+				context.fillStyle = "green";
+				context.font = font_size + "px sans-sarif";
+				for(var i = 0; i < columns; i++) {
+					context.fillText(Math.floor(Math.random() * 2), i * block_size, drop[i] * block_size); /*get 0 and 1*/
+					
+					if(drop[i] * block_size > matrix.height || Math.random() > continueProb) /*reset*/
+						drop[i] = 0;
+					drop[i]++;
+				}
+			}
+			setInterval(drawMatrix, 40);
+		</script>
+	</body>
+</html>
