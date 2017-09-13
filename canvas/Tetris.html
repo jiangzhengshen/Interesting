@@ -1,0 +1,633 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN">
+<html>
+<head>
+<title>俄罗斯方块</title>
+<link rel="stylesheet" href="http://cdn.bootcss.com/bootstrap/3.3.5/css/bootstrap.min.css">
+<meta http-equiv="content-type" content="text/html;charset=utf-8">
+<style>
+body{
+    margin:0;
+    padding:0;
+    background: url("https://raw.githubusercontent.com/Samlin901211/img/master/tetris/bg.jpg");
+    background-size:cover; 
+}
+.container {
+    position:absolute;
+    left:50%;
+    top:50%;
+    margin-left:-150px;
+    margin-top:-300px;
+    width:300px;
+    height:600px;
+    opacity:0.9;
+    font-size:20px;
+}
+.point {
+    position: relative;
+    top:0;
+    left:120%;
+    width:100%;
+    height:300px;
+}
+.block {
+    position:absolute;
+    width:30px;
+    height:30px;
+    display:block;
+    border: 4px gray outset;
+    border-color: #FFF;
+}
+.nextblock {
+    position:absolute;
+    width:20px;
+    height:20px;
+    border: 4px gray outset;
+    border-color: #FFF;
+    display:none;
+}
+.control {
+    position:relative;
+    top:100%;
+    left:0;
+    width:100%;
+    height:100%;
+}
+.section {
+    width:100%;
+    margin-bottom:50px;
+    position:relative;
+}
+.section_bottom {
+    margin-bottom:0;
+}
+.twinkling{
+    -webkit-animation: twinkling 0.2s infinite ease-in-out; 
+}
+@-webkit-keyframes twinkling{    /*透明度由0到1*/
+    0% {
+       opacity:0; /*透明度为0*/
+    }
+    100% {
+       opacity:1; /*透明度为1*/
+    }
+}
+</style>
+</head>
+<body>
+<div class="container"></div>
+<script src="http://cdn.bootcss.com/jquery/1.11.3/jquery.min.js"></script>    
+<script type="text/javascript">
+//思路如下：我用了map[][]和movingEles[]数组存放页面上的方块，map[][]存放的是固定在页面上的方块的颜色值,movingEles[]存放的是正在移动方块的坐标,利用setInterval来控制速度。页面在初始化的时候会把所有方块加载好，之后都是通过map[][]和movingEles[]里的值来进行绘制。而键盘事件都是使用了事件委托。
+
+//事件托管
+var Event = (function(){
+    var event = {};
+    return {
+        bind : function(obj,callback) {
+             event.obj = obj;
+             event.callback = callback;
+        },
+        trigger : function(direction) {
+              event.callback.call(event.obj,direction);
+        }
+    }
+})();
+
+var gameManager =(function() {
+    var config = getConfig();
+    var types = config.types;//默认方块类型
+    var speed = config.speed;//初始速度
+
+    var map = [];//记录游戏区域方块占位二维数组
+    var point = 0;//当前分数
+    var movingEles = []; //正在移动的元素
+    var movingElesColor = "";//正在移动的元素的颜色
+    var movingElesPoint = "";//正在移动的元素的旋转点
+    var ismoving = false; //是否正在移动（左或右）
+    var istwinking = false; //是否在闪烁，即正在加载消去动画
+    var pause = false; //是否游戏暂停
+    var next = types[Math.round(Math.random() * (types.length-1))];//下一个方块
+    
+    //获取游戏的配置
+    function getConfig() {
+      var types = [ //方块类型 block:是坐标 color:是颜色 point： 是旋转点
+        { 
+          block : [[0,0],[0,1],[1,0],[2,0]], 
+          color : "red",
+          point : 0 
+        },
+        { 
+          block : [[0,0],[-1,0],[1,0],[0,-1]],
+          color : "green",
+          point : 0
+        },
+        { 
+          block : [[0,0],[-1,1],[0,1],[1,0]],
+          color : "lightblue",
+          point : 0
+        },
+        { 
+          block : [[0,0],[1,0],[2,0],[3,0]],
+          color : "grey",
+          point : 1
+        },
+        { 
+          block : [[0,0],[0,-1],[-1,-1],[-2,-1]],
+          color : "pink",
+          point : 1
+        },
+        { 
+          block : [[0,0],[0,-1],[-1,-1],[1,0]],
+          color : "yellowgreen",
+          point : 0
+        },
+        { 
+          block : [[0,0],[1,0],[1,-1],[0,-1]],
+          color : "brown",
+          point : -1
+        },
+      ];
+      
+      //重新调整坐标位置，把上面的相对定位的坐标调整到一会儿游戏区域对应的坐标，主要是为了让方块类型能更快速的创建
+      function reCoordinate() {
+        for(var j=0;j<types.length;j++) {
+          var minTop = 9999;//找出四个方块中最小的top值，一会儿会进行平移
+              var minLeft = 9999;//找出四个方块中最小的left值，一会儿会进行平移
+              var minRight = -9999;//找出四个方块中最大的left值，一会儿会进行平移
+              var type = types[j].block;
+              for(var i=0;i<type.length;i++) {
+                  var item = type[i];
+                  var left = item[0];
+                  var top = item[1];
+                  if(top < minTop) {
+                      minTop = top;
+                  }
+                  if(left > minRight) {
+                      minRight = left;
+                  }
+                  if(left < minLeft) {
+                      minLeft = left;
+                  }
+              }
+              for(var i=0;i<type.length;i++) {
+                   var item = type[i];
+                   var left = item[0];
+                   var top = item[1];
+                   var length = minRight - minLeft + 1;//方块长度
+                   var left = left + Math.round((10 - length) / 2) - minLeft;//左右偏移量
+                   type[i][0] = left;
+                   type[i][1] = top - minTop;
+              }
+        }
+      }
+        
+      reCoordinate();
+      return {
+        types : types,
+        speed : 1000
+      }
+    }
+
+    //判断是否能移动
+    //参数 direction:移动方向
+    //返回值 true：可以移动 false:不可以移动
+    function canMove(direction) { 
+        var temp = [];//用来记录移动后的方块位置
+        //遍历正在移动的元素
+        for(var i=0;i<movingEles.length;i++) {
+            var left = movingEles[i][0];
+            var top = movingEles[i][1];
+            if(direction == "left") {
+                left--;
+                if(left >= 0 && (!map[left][top])) {//判断他们变动位置之后会不会超出游戏区域或是已经有方块占了
+                    temp.push([left,top]);
+                }
+            }else if(direction == "right") {
+                left++;
+                if(left <= 9 && (!map[left][top])) {
+                    temp.push([left,top]);
+                }
+            }else if(direction == "down"){
+                top++;
+                if(top < 20 && (!map[left][top])) {
+                    temp.push([left,top]);
+                }
+            }
+        }        
+        //如果某些方块不能移动则temp数量会少于正在移动元素的数量，也就是不能移动，反之就把新位置复制给正在移动的元素  
+        if(temp.length == movingEles.length) {
+            for(var i=0;i<movingEles.length;i++) {
+                movingEles[i][0] = temp[i][0];
+                movingEles[i][1] = temp[i][1];
+            }
+            return true;
+        }
+        return false;
+    }
+    
+    //判断能否旋转
+    //返回值 true：可以移动 false:不可以移动
+    function canTranslate() {
+        if(movingElesPoint == -1) return false;
+        //获取旋转点
+        var pointNumber = movingElesPoint || 0;
+        var point = movingEles[pointNumber];
+        var pointleft = point[0];
+        var pointtop = point[1];
+        var temp =[]; 
+        //遍历正在移动元素，并通过坐标运算得到变化后的坐标位置
+        for(var i=0;i<movingEles.length;i++) { //利用极坐标方法算出切换后的坐标变化
+             var templeft = movingEles[i][0];
+             var temptop = movingEles[i][1];
+             //var angle =  2*Math.PI/360*90;
+             //var left = (templeft - pointleft)*Math.cos(angle) - (temptop - pointtop) * Math.sin(angle) + pointleft;
+             //var top = (temptop - pointtop)*Math.cos(angle) + (templeft - pointleft) * Math.sin(angle) + pointtop;
+             var left =  - (temptop - pointtop) + pointleft;
+             var top = (templeft - pointleft) + pointtop;
+             temp.push([left,top]);
+        }
+
+        //超出左，右边框的处理，会自动弹回游戏区域
+        var min = 0,max = 9,canchange = true; //min,max分别用来统计超出左边框的最大值和超出右边框的最大值
+        for(var i=0;i<temp.length;i++) {     
+           var left = temp[i][0];
+           var top = temp[i][1];
+           
+           if(top>19) {
+               canchange = false;
+               break;
+           }
+
+           if(map[left] && map[left][top]) {
+               canchange = false;
+               break;
+           }
+
+           if(left < 0 || left > 9) {
+                if(left < min) {
+                    min = left;
+                }
+                if(left > max) {
+                    max = left;
+                }
+           }
+        }
+        if(min != 0) {
+            for(var i=0;i<temp.length;i++) {  
+                 temp[i][0] -= min;   
+            }
+        }
+        if(max != 9) {
+            for(var i=0;i<temp.length;i++) {  
+                 temp[i][0] -= (max-9);
+            }
+        }
+        //更新坐标
+        if(canchange) {
+            for(var i=0;i<movingEles.length;i++) {
+                movingEles[i][0] = temp[i][0];
+                movingEles[i][1] = temp[i][1];
+            }
+            return true;
+        }
+        return false;
+    }
+    
+    //初始化游戏区域
+    function initStage() { 
+        var html = "";
+        //初始化游戏区域方块
+        for(var i=0;i<10;i++) {
+            map[i] = [];
+            for(var j=-4;j<20;j++) {
+                var toppx = j*30;
+                var leftpx = i*30;
+                var display = "block";
+                if(j <= -1) {
+                    display = "none";
+                }
+                html += "<div data-position='" + i +","+ j+"' class='block' style='display:" + display + ";top:" + toppx + "px;left:" + leftpx + "px;'></div>";
+                map[i][j] = 0;
+            }
+        }
+        //初始化游戏区域右边的信息展示区
+        var temp = ""; 
+        for(var i=0;i<9;i++) {
+            for(var j=-4;j<10;j++) {
+                temp += "<div next-position='" + i +","+ j+"' class='nextblock' style='left:" + (i*20) + "px;top:" + (j*20) + ";'></div>";
+            }
+        }
+        html += "<div class='point'>" +
+                    "<div class='section'>" +
+                         "总分:<span class='js_point'>0</span>" +
+                    "</div>" +
+                    "<div class='section'>" +
+                         "速度:<span class='js_speed'>0</span>" +
+                    "</div>" +
+                    "<div class='js_next section section_bottom'>下一个:</div>" +
+                    "<div class='section'>" + temp + "</div><br>" +
+                    "<div class='section'>" +
+                         "<button class='js_begin btn btn-success'>开始</button>" + 
+                         "<button class='js_start btn btn-danger' style='display:none'>暂停</button>" +
+                    "</div>" +
+                 "</div>";
+        $(".container").append(html);
+    }
+    
+    //把移动元素固定在游戏区域
+    //返回值 true 游戏结束 false 游戏未结束
+    function putIn() {
+        var end = false;
+        for(var i=0;i<movingEles.length;i++) {
+            var ele = movingEles[i];
+            var left = ele[0];
+            var top = ele[1];
+            if(map[left][top]) {//如果最终放置的位置被占用说明改方块初始化后就不能移动，则游戏结束
+                end = true;
+                break;
+            }
+            map[left][top] = movingElesColor; 
+        }
+        return end;
+    }
+    
+    //消除行
+    function clear() {
+        var clear = [];//用来存放被消除的行号
+        //遍历所有行，若出现要消除的行，则加上闪烁效果
+        for(var i=-4;i<20;i++) {
+            var k = 0;
+            for(var j=0;j<10;j++) {
+                if(map[j][i]) {
+                    k++;
+                }
+            }
+            if(k == 10) {    
+               clear.push(i);            
+               for(var j=0;j<10;j++) {
+                    $("[data-position='" + j + "," + i + "']").addClass("twinkling");
+                    map[j][i] = 0;
+               } 
+            }
+        }
+
+        //消除clear数组存放的行，并将不需要消除的行进行平移，
+        //这里需要注意的是若消除的行号不是连续的，需要分段进行处理
+        var clearNumber = clear.length;
+        if(clearNumber > 0) {
+          istwinking = true;//声明正在处理消除
+          var length = 1; 
+          //因为我们遍历是从行号小的往行号的进行判断是否能消除，考虑到平移顺序，需要从大往小进行遍历，假如说我们须要消除的行号数组为clear[16,18,19]
+          //则首先判断 数组第三个和第二个行号是否相邻，若相邻则先存在length中，直到找到不相邻为止，在例子中可以看到16和18不相邻，最后只需要把18行以
+          //上的所有行向下平移两个单位,这时候需要注意要把clear数组中的16改为18因为原来的16行已经跑到第18行了，最后在把18行(之前的16行)之前的所有行向
+          //下平移
+          for(var i=clearNumber-1;i>0;i--) {
+             if(clear[i] - clear[i-1] == 1) {
+                  length++;
+             }else {
+                 for(var k=clear[i]-1;k>=-4;k--) {
+                        for(var j=0;j<10;j++) {
+                            map[j][k + length] = map[j][k];
+                        }
+                 }
+                 for(var o=0;o<i;o++) {
+                      clear[o] += length;
+                 }
+                 length = 1;
+             }
+          }
+          var start = clear[0];
+          for(var i=start-1;i>=-4;i--) {
+               for(var j=0;j<10;j++) {                        
+                   map[j][i + length] = map[j][i];                               
+               }
+          }
+
+          //根据消除的行号统计分数
+          if(clearNumber == 1) {
+              point += 10;
+          }else if(clearNumber == 2) {
+              point += 30;
+          }else if(clearNumber == 3) {
+              point += 60;
+          }else if(clearNumber == 4) {
+              point += 100;
+          }
+          $(".js_point").html(point);
+        }
+        return clearNumber;
+    }
+    
+    //游戏结束后清理游戏区域和信息展示区域
+    function clearStage() {
+        for(var i=0;i<10;i++) { 
+            map[i] = [];
+            for(var j=-4;j<20;j++) {
+                map[i][j] = 0;
+            }
+        }
+        movingEles = [];
+        //清除游戏画面上的方块
+        $("div[data-position]").css({
+            background:"none",
+            borderColor : "#FFF"
+        });
+        //清除"下一个"的方块
+        $("div[next-position]").hide();
+        //分数归0
+        point = 0;
+        $(".js_point").html("0");
+        //速度归0
+        speed = 1000;
+        $(".js_speed").html("0");
+    }
+
+    //根据map进行游戏区域的绘制
+    function painStage() {
+        var pain = function() {
+            $("div[data-position]").removeClass("twinkling");
+            for(var i=0;i<10;i++) {
+                for(var j=-4;j<20;j++) {
+                    if(map[i][j]) {
+                        $("div[data-position='" + i + "," + j + "']").css({
+                            background : map[i][j],
+                            borderColor : map[i][j]
+                        });
+                    }else {
+                        $("div[data-position='" + i + "," + j + "']").css({
+                            background:"none",
+                            borderColor : "#FFF"
+                        });
+                    }
+                }
+            }
+            for(var i=0;i<movingEles.length;i++) {
+                var item = movingEles[i];
+                $("div[data-position='" + item[0] + "," + item[1] + "']").css({
+                      background : movingElesColor,
+                      borderColor : movingElesColor
+                });
+            }
+        } 
+        if(istwinking) {//如果是消完行则延时处理，为的是让闪烁效果得到展现
+             setTimeout(function() {
+                istwinking = false;
+                pain();
+            },1000); 
+        }else {
+            pain();
+        }       
+    }
+    
+    //绘制下一个方块到信息展示区
+    function painNext() {
+        $("div[next-position]").hide();
+        var nexttype = next.block;
+        var nextcolor = next.color;
+        for(var i=0;i<nexttype.length;i++) {
+              var left = nexttype[i][0];
+              var top = nexttype[i][1];
+              $("div[next-position='" + left + "," + top + "']").css({
+                  background:nextcolor,
+                  borderColor:nextcolor
+              }).show();
+        } 
+    } 
+    
+    //创建下落的方块，并预生成下一个方块 并绘制
+    function createEle() {
+        movingEles.length = 0;
+        var nexttype = next.block;
+        for(var i=0;i<nexttype.length;i++) {
+             var item = nexttype[i];
+             var left = item[0];
+             var top = item[1];
+             movingEles.push([left,top]);
+        }
+        movingElesColor = next.color;
+        movingElesPoint = next.point;
+        next = types[Math.round(Math.random() * (types.length-1))];
+        painStage();
+        painNext();
+    }
+    
+    //开始游戏
+    function beginGame() {
+        //先创建下落的元素
+        createEle();
+        //循环函数
+        var hoop = function() {
+            if(!pause && !istwinking) { //非暂停或正在处理闪烁时才往下执行
+                var loc = canMove("down");
+                if(loc) {
+                     painStage();
+                }else if(!ismoving){//判断是否用户一直按着键，在不能下移时允许用户左移或右移
+                     var end = putIn();
+                     if(end) {
+                        clearInterval(interval);
+                        reset();
+                     }else {
+                        //根据消除的行数更改分数和游戏速度
+                        var clearNumber = clear();
+                        if(clearNumber > 0 && point >= 10) {
+                            var rate = Math.floor(point / 10);
+                            var nextspeed = speed - rate * 10;
+                            if(nextspeed > 10) {               
+                               $(".js_speed").html(rate);
+                               clearInterval(interval);
+                               interval = setInterval(hoop,nextspeed);
+                            }else {
+                               $(".js_speed").html('<span class="color:red">最高速度</span>');
+                            }
+                        }
+                        createEle();
+                     }
+                }
+            } 
+        }
+        var interval = setInterval(hoop,speed);
+    }
+    
+    //结束游戏时全局方块闪烁
+    function endGameShow() {
+      $("div[data-position]").addClass("twinkling");
+      setTimeout(function() {
+          $("div[data-position]").removeClass("twinkling");
+      },1000);   
+    }
+    
+    //重置游戏，在游戏结束后触发
+    function reset() {
+        endGameShow();
+        setTimeout(function() {
+            alert("你输啦！！！");
+            clearStage();
+            $(".js_begin").show();
+            $(".js_start").hide().addClass("btn-danger").html("暂停");
+        },1100);  
+    }
+    
+    //承接键盘事件的处理
+    function keyEvent(event) {
+        if(pause && event != "start") return;
+        if(event == "left" || event == "right" || event == "down") {
+             var loc = canMove(event);
+             if(loc) {
+                painStage();
+                event != "down" && (ismoving = true);//如果移动方向不是向下则标记方块正在移动，这样在最后一行还可以最后调整位置
+             }            
+        }else if(event == "translate") {
+            var loc = canTranslate();
+            if(loc) {
+                painStage();
+             }   
+        }else if(event == "end") {
+             ismoving = false;
+        }else if(event == "begin") {
+             beginGame();
+             $(".js_begin").hide();
+             $(".js_start").show();
+        }else if(event == "start") {
+             if(pause) {
+                 pause = false;
+                 $(".js_start").removeClass("btn-success").addClass("btn-danger").html("暂停");
+             }else {
+                 pause = true;
+                 $(".js_start").removeClass("btn-danger").addClass("btn-success").html("继续");
+             }
+        }
+    }
+    return {
+        init : function() {
+            initStage();
+            Event.bind(this,keyEvent);
+        }
+    }
+})();
+
+$(document).keydown(function(event){
+     var code = event.keyCode;
+     if(code == 37) {
+          Event.trigger("left");
+     }
+     if(code == 39) {
+          Event.trigger("right");
+     }
+     if(code == 38) {
+          Event.trigger("translate");
+     }
+     if(code == 40) {
+          Event.trigger("down");
+     }
+}).keyup(function(event){
+     Event.trigger("end");
+}).on("click",".js_begin",function(){
+     Event.trigger("begin");
+}).on("click",".js_start",function(){
+     Event.trigger("start");
+});
+
+gameManager.init();//开始游戏
+</script>
+</body>
+</html>
