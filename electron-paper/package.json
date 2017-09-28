@@ -1,0 +1,19 @@
+{
+  "name": "electron-paper",
+  "version": "1.0.0",
+  "description": "Paper Management",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron ."
+  },
+  "repository": "",
+  "keywords": [
+    "paper",
+    "management"
+  ],
+  "author": "jensonjiang",
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "~1.7.8"
+  }
+}
