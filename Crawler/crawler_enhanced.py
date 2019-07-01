@@ -188,6 +188,9 @@ class ImageCrawler(Crawler):
 
 
 class ICML2019Crawler(Crawler):
+    """
+    Parameters: -a https://icml.cc/Conferences/2019/Schedule?type=Poster -d 0
+    """
     @staticmethod
     def heading_author(_, element):
         entry = PyQuery(element)
@@ -201,6 +204,37 @@ class ICML2019Crawler(Crawler):
         with open(self._out_dir + 'ICML2019.csv', 'w', encoding='utf8') as outfile:
             for heading, author_list in heading_authors:
                 outfile.write('\t'.join([heading] + author_list) + '\n')
+
+
+class CVPR2019Crawler(Crawler):
+    """
+    Parameters: -a http://cvpr2019.thecvf.com/program/main_conference -d 0
+    """
+    def save_content(self, url, depth, html_pyquery):
+        topic_title_author_dic = {}
+        all_tables = html_pyquery('table')
+        for a_table in all_tables.items():
+            entries = a_table('tr').filter(lambda i, this: PyQuery(this).attr('class') != 'blue-bottom')
+            current_topic = ''
+            current_id = 0
+            current_title = ''
+            current_authors = []
+            for idx, field in enumerate(entries('td')):
+                if idx % 6 == 0:
+                    if field.text is not None:
+                        current_topic = field.text
+                elif idx % 6 == 3:
+                    current_title = field.text
+                elif idx % 6 == 4:
+                    current_authors = field.text.split(';')
+                elif idx % 6 == 5:
+                    current_id = field.text
+                    if current_id not in topic_title_author_dic.keys():
+                        topic_title_author_dic[current_id] = [current_topic, current_title] + current_authors
+
+        with open(self._out_dir + 'CVPR2019.csv', 'w', encoding='utf8') as outfile:
+            for id, topic_title_author_list in topic_title_author_dic.items():
+                outfile.write('\t'.join([id] + topic_title_author_list) + '\n')
 
 
 def main():
@@ -218,7 +252,7 @@ def main():
                         help='Specify the Output Directory')
     args = parser.parse_args()
 
-    crawler = ICML2019Crawler(args)
+    crawler = CVPR2019Crawler(args)
     crawler.run()
 
 
